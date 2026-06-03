@@ -24,7 +24,7 @@ Currently, [ps3toolchain](https://github.com/ps3dev/ps3toolchain) builds not jus
 - Clearer troubleshooting
 - Easier maintenance
 - More stable builds
-- Points of failure are distinct
+- Distinct points of failure
 - Toolchain not tied to a single SDK
 
 
@@ -41,4 +41,4 @@ Currently, [ps3toolchain](https://github.com/ps3dev/ps3toolchain) builds not jus
 - Point CI towards script(s) in this repository
 - Update outdated libraries and compilers
 - ...
-- Make PS3 a high-quality, accessible platform for homebrew development, with best practices, good GitHub hygiene and polished resources!
+- Make PS3 a high-quality, accessible platform for homebrew development, with best practices, good code hygiene and polished resources!
