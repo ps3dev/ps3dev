@@ -21,6 +21,7 @@ jobs:
     continue-on-error: true
 
     env:
+      PS3TOOLCHAIN_STAGES: "1"
       PS3DEV: /opt/ps3dev
       PS3TOOLCHAIN_REF: master
 
