@@ -35,7 +35,7 @@ jobs:
             arch_shell: "arch -x86_64"
 
           - name: macos-arm64
-            os: macos-latest
+            os: macos-15-arm64
             family: macos
             arch_shell: ""
 
