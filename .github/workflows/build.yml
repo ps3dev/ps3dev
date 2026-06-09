@@ -5,28 +5,49 @@ on:
   pull_request:
   repository_dispatch:
     types: [run_build]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build-toolchain:
-    name: Toolchain (${{ matrix.os }})
+    name: Toolchain (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-15-intel
+        include:
+          - name: ubuntu-x86_64
+            os: ubuntu-latest
+            family: ubuntu
+            arch_shell: ""
+
+          - name: ubuntu-arm64
+            os: ubuntu-24.04-arm
+            family: ubuntu
+            arch_shell: ""
+
+          - name: macos-intel
+            os: macos-15-intel
+            family: macos
+            arch_shell: "arch -x86_64"
+
+          - name: macos-arm64
+            os: macos-latest
+            family: macos
+            arch_shell: ""
+
     env:
       PS3DEV: ${{ github.workspace }}/ps3dev
+      PS3TOOLCHAIN_REF: master
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Ubuntu requirements
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.family == 'ubuntu'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,22 +57,18 @@ jobs:
             python3-dev subversion texinfo wget zlib1g-dev
 
       - name: Install macOS requirements
-        if: matrix.os == 'macos-15-intel'
-        shell: arch -x86_64 bash -e {0}
+        if: matrix.family == 'macos'
+        shell: bash
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_ENV_HINTS: 1
         run: |
-          brew install \
+          ${{ matrix.arch_shell }} brew install \
             autoconf automake gmp libelf ncurses openssl \
             pkg-config texinfo wget zlib
 
       - name: Build toolchain
-        if: matrix.os == 'ubuntu-latest'
-        run: sh ./build-all.sh
-
-      - name: Build toolchain
-        if: matrix.os == 'macos-15-intel'
-        shell: arch -x86_64 bash -e {0}
-        run: sh ./build-all.sh
+        shell: bash
+        run: |
+          ${{ matrix.arch_shell }} sh ./build-all.sh
