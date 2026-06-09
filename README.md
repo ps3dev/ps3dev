@@ -1,6 +1,6 @@
 <div align="center">
 
-[![CI](https://github.com/ps3dev/ps3toolchain/actions/workflows/build.yml/badge.svg)](https://github.com/ps3dev/ps3toolchain/actions/workflows/build.yml)
+[![CI](https://github.com/ps3dev/ps3dev/actions/workflows/build.yml/badge.svg)](https://github.com/ps3dev/ps3dev/actions/workflows/build.yml)
 
 # PS3DEV
 
@@ -13,6 +13,7 @@ Master repo for building the entire suite of PlayStation 3 development tools and
 - [PS3DEV](#ps3dev)
   - [Table of Contents](#table-of-contents)
   - [What is PS3DEV?](#what-is-ps3dev)
+  - [Building](#building)
   - [To-Do](#to-do)
 
 
@@ -24,8 +25,20 @@ Currently, [ps3toolchain](https://github.com/ps3dev/ps3toolchain) builds not jus
 - Clearer troubleshooting
 - Easier maintenance
 - More stable builds
-- Distinct points of failure
+- Points of failure are distinct
 - Toolchain not tied to a single SDK
+
+
+## Building
+
+Set `PS3DEV` to an absolute, writable installation path and run:
+
+```sh
+export PS3DEV=/usr/local/ps3dev
+sh ./build-all.sh
+```
+
+The current bootstrap stage clones [ps3toolchain](https://github.com/ps3dev/ps3toolchain) and builds its five pre-PSL1GHT scripts: `001`, `002`, `004`, `005`, and `006`.
 
 
 ## To-Do
@@ -38,7 +51,7 @@ Currently, [ps3toolchain](https://github.com/ps3dev/ps3toolchain) builds not jus
 - Ensure stable builds on Linux and macOS
 - Automate pre-built releases
 - Set up Docker
-- Point CI towards script(s) in this repository
+- Expand CI to cover PSL1GHT and ps3libraries stages
 - Update outdated libraries and compilers
 - ...
 - Make PS3 a high-quality, accessible platform for homebrew development, with best practices, good code hygiene and polished resources!
