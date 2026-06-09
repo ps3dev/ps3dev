@@ -64,9 +64,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_ENV_HINTS: 1
         run: |
-          ${{ matrix.arch_shell }} brew install \
-            autoconf automake gmp libelf ncurses openssl \
-            pkg-config texinfo wget zlib
+          ${{ matrix.arch_shell }} brew install autoconf automake libelf ncurses texinfo zlib
 
       - name: Build toolchain
         shell: bash
