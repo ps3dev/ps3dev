@@ -1,0 +1,79 @@
+name: Exotic Hosts
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly sanity check, Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exotic-hosts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qemu-ppc64le:
+    name: QEMU Linux ppc64le
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    continue-on-error: true
+
+    env:
+      PS3DEV: /opt/ps3dev
+      PS3TOOLCHAIN_REF: master
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ppc64le
+
+      - name: Build under emulated ppc64le
+        run: |
+          docker run --rm \
+            --platform linux/ppc64le \
+            -v "$PWD:/work" \
+            -w /work \
+            -e PS3DEV="$PS3DEV" \
+            -e PS3TOOLCHAIN_REF="$PS3TOOLCHAIN_REF" \
+            ubuntu:24.04 \
+            bash -euxo pipefail -c '
+              uname -a
+              uname -m
+              cat /etc/os-release || true
+
+              apt-get update
+              apt-get install -y \
+                autoconf \
+                automake \
+                bison \
+                bzip2 \
+                ca-certificates \
+                clang \
+                flex \
+                g++ \
+                gcc \
+                git \
+                libelf-dev \
+                libgmp3-dev \
+                libncurses5-dev \
+                libssl-dev \
+                libtool-bin \
+                make \
+                patch \
+                pkg-config \
+                python-is-python3 \
+                python3-dev \
+                subversion \
+                texinfo \
+                wget \
+                xz-utils \
+                zlib1g-dev
+
+              sh ./build-all.sh
+            '
