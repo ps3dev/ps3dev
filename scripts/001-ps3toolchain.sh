@@ -8,15 +8,12 @@ REPO_DIR="${PS3TOOLCHAIN_DIR:-ps3toolchain}"
 
 # Default: build every toolchain stage before PSL1GHT.
 #
-# Current ps3toolchain stages used here:
-#   1 2 4 5 6
-#
 # CI can override this, for example:
 #   PS3TOOLCHAIN_STAGES="1" sh ./build-all.sh
 #   PS3TOOLCHAIN_STAGES="1 2" sh ./build-all.sh
 #   PS3TOOLCHAIN_STAGES="1 2 4 5 6" sh ./build-all.sh
-#
-PS3TOOLCHAIN_STAGES="${PS3TOOLCHAIN_STAGES:-1 2 4 5 6}"
+
+PS3TOOLCHAIN_STAGES="${PS3TOOLCHAIN_STAGES:-1 2 4 5}"
 
 echo "==> ps3toolchain"
 echo "REPO_URL=$REPO_URL"
