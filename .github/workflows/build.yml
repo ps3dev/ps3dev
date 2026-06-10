@@ -1,0 +1,87 @@
+name: PS3 SDK Release
+
+on:
+  push:
+  pull_request:
+  repository_dispatch:
+    types: [run_build]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+#        os: [macos-15-intel, ubuntu-latest, macos-26]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Checkout PSL1GHT
+      uses: actions/checkout@v6
+      with:
+        repository: ps3dev/PSL1GHT
+        path: PSL1GHT
+        
+    - name: Install Ubuntu requirements
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install autoconf automake bison flex gcc libelf-dev make texinfo libncurses5-dev patch python3 python-is-python3 subversion wget zlib1g-dev libtool-bin python3-dev bzip2 libgmp3-dev pkg-config
+        curl -sL https://github.com/ps3dev/ps3toolchain/releases/download/2026-06-09/ps3dev-92534e60-ubuntu-latest.tar.gz | tar xvz -C ./
+    
+    - name: Install macOS intel requirements
+      if: matrix.os == 'macos-15-intel'
+      shell: arch -x86_64 bash -e {0}
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: 1
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_ENV_HINTS: 1
+      run: |
+        brew install autoconf automake openssl libelf ncurses zlib gmp wget pkg-config texinfo
+
+    - name: Install macOS arm64 requirements
+      if: matrix.os == 'macos-26'
+      shell: bash -e {0}
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: 1
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_ENV_HINTS: 1
+      run: |
+        brew install autoconf automake openssl libelf ncurses zlib gmp wget pkg-config texinfo
+
+    - name: Build PSL1GHT
+      if: matrix.os == 'ubuntu-latest'
+      shell: bash -e {0}
+      run: |
+        export PS3DEV=$PWD/ps3dev
+        export PSL1GHT=$PS3DEV
+        export PATH=$PATH:$PS3DEV/bin
+        export PATH=$PATH:$PS3DEV/ppu/bin
+        export PATH=$PATH:$PS3DEV/spu/bin
+        cd PSL1GHT
+        make install-ctrl
+        make
+        make install
+
+    - name: Install precompiled libraries
+      if: matrix.os == 'ubuntu-latest'
+      shell: bash -e {0}
+      run: |
+        curl -L https://github.com/ps3dev/ps3libraries/releases/download/2026-06-09/ps3libraries.zip -o libs.zip
+        cd $PWD/ps3dev
+        unzip ../libs.zip
+
+    - name: Get short SHA
+      id: slug
+      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> "$GITHUB_OUTPUT"
+    
+    - name: Compress ps3dev folder
+      run: |
+        tar -zcvf ps3dev.tar.gz ps3dev
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: ps3dev-${{ steps.slug.outputs.sha8 }}-${{matrix.os}}
+        path: ps3dev.tar.gz
