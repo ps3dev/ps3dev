@@ -21,8 +21,8 @@ jobs:
     - name: Checkout PSL1GHT
       uses: actions/checkout@v6
       with:
-        repository: ps3dev/PSL1GHT
-        path: PSL1GHT
+        repository: ps3dev/ps3toolchain
+        path: ps3toolchain
         
     - name: Install Ubuntu requirements
       if: matrix.os == 'ubuntu-latest'
@@ -60,18 +60,20 @@ jobs:
         export PATH=$PATH:$PS3DEV/bin
         export PATH=$PATH:$PS3DEV/ppu/bin
         export PATH=$PATH:$PS3DEV/spu/bin
-        cd PSL1GHT
-        make install-ctrl
-        make
-        make install
+        cd ps3toolchain
+        ./toolchain.sh 8
 
-    - name: Install precompiled libraries
+    - name: Install ported libraries
       if: matrix.os == 'ubuntu-latest'
       shell: bash -e {0}
       run: |
-        curl -L https://github.com/ps3dev/ps3libraries/releases/download/2026-06-09/ps3libraries.zip -o libs.zip
-        cd $PWD/ps3dev
-        unzip -o ../libs.zip
+        export PS3DEV=$PWD/ps3dev
+        export PSL1GHT=$PS3DEV
+        export PATH=$PATH:$PS3DEV/bin
+        export PATH=$PATH:$PS3DEV/ppu/bin
+        export PATH=$PATH:$PS3DEV/spu/bin
+        cd ps3toolchain
+        ./toolchain.sh 9
 
     - name: Get short SHA
       id: slug
