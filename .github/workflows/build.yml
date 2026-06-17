@@ -1,89 +1,117 @@
 name: PS3 SDK Release
 
-on:
-  push:
-  pull_request:
-  repository_dispatch:
-    types: [run_build]
+on: [ push, pull_request, workflow_dispatch ]
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-#        os: [macos-15-intel, ubuntu-latest, macos-26]
+        include:
+          - runner: ubuntu-latest
+            os: linux
+
+#          - runner: macos-15-intel
+#            os: macos
+
+#          - runner: macos-26
+#            os: macos
 
     steps:
-    - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Checkout PSL1GHT
-      uses: actions/checkout@v6
-      with:
-        repository: ps3dev/ps3toolchain
-        path: ps3toolchain
-        
-    - name: Install Ubuntu requirements
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install autoconf automake bison flex gcc libelf-dev make texinfo libncurses5-dev patch python3 python-is-python3 subversion wget zlib1g-dev libtool-bin python3-dev bzip2 libgmp3-dev pkg-config
-        curl -sL https://github.com/ps3dev/ps3toolchain/releases/download/2026-06-09/ps3dev-92534e60-ubuntu-latest.tar.gz | tar xvz -C ./
-    
-    - name: Install macOS intel requirements
-      if: matrix.os == 'macos-15-intel'
-      shell: arch -x86_64 bash -e {0}
-      env:
-        HOMEBREW_NO_AUTO_UPDATE: 1
-        HOMEBREW_NO_INSTALL_CLEANUP: 1
-        HOMEBREW_NO_ENV_HINTS: 1
-      run: |
-        brew install autoconf automake openssl libelf ncurses zlib gmp wget pkg-config texinfo
+      - name: Checkout build scripts
+        uses: actions/checkout@v6
+        with:
+          repository: ps3dev/ps3toolchain
+          path: ps3toolchain
 
-    - name: Install macOS arm64 requirements
-      if: matrix.os == 'macos-26'
-      shell: bash -e {0}
-      env:
-        HOMEBREW_NO_AUTO_UPDATE: 1
-        HOMEBREW_NO_INSTALL_CLEANUP: 1
-        HOMEBREW_NO_ENV_HINTS: 1
-      run: |
-        brew install autoconf automake openssl libelf ncurses zlib gmp wget pkg-config texinfo
+      - name: Set env vars
+        id: slug
+        run: |
+          echo "sha_name=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_ENV
+          echo "NO_SAVANNAH=1" >> $GITHUB_ENV
 
-    - name: Build PSL1GHT
-      if: matrix.os == 'ubuntu-latest'
-      shell: bash -e {0}
-      run: |
-        export PS3DEV=$PWD/ps3dev
-        export PSL1GHT=$PS3DEV
-        export PATH=$PATH:$PS3DEV/bin
-        export PATH=$PATH:$PS3DEV/ppu/bin
-        export PATH=$PATH:$PS3DEV/spu/bin
-        cd ps3toolchain
-        ./toolchain.sh 8
+      - name: Install Linux requirements
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get -y install gcc libelf-dev autoconf automake bison flex make texinfo patch wget zlib1g-dev libtool-bin bzip2 pkg-config libssl-dev
 
-    - name: Install ported libraries
-      if: matrix.os == 'ubuntu-latest'
-      shell: bash -e {0}
-      run: |
-        export PS3DEV=$PWD/ps3dev
-        export PSL1GHT=$PS3DEV
-        export PATH=$PATH:$PS3DEV/bin
-        export PATH=$PATH:$PS3DEV/ppu/bin
-        export PATH=$PATH:$PS3DEV/spu/bin
-        cd ps3toolchain
-        ./toolchain.sh 9
+      - name: Install MacOS requirements
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+          HOMEBREW_NO_ENV_HINTS: 1
+        run: |
+          eval "$(brew shellenv)"
+          brew install autoconf automake openssl libelf ncurses zlib gmp wget pkg-config texinfo
 
-    - name: Get short SHA
-      id: slug
-      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> "$GITHUB_OUTPUT"
-    
-    - name: Compress ps3dev folder
-      run: |
-        tar -zcvf ps3dev.tar.gz ps3dev
+      - name: Download PS3DEV Toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TOOLCHAIN_URL=$(gh api repos/ps3dev/ps3toolchain/releases \
+            --jq '
+              map(select(.prerelease and (.draft | not)))
+              | sort_by(.published_at)
+              | reverse
+              | .[0].assets[]
+              | select(.name == "ps3dev-${{ matrix.os }}-${{ runner.arch }}.tar.gz")
+              | .browser_download_url
+            ')
 
-    - uses: actions/upload-artifact@v6
-      with:
-        name: ps3dev-${{ steps.slug.outputs.sha8 }}-${{matrix.os}}
-        path: ps3dev.tar.gz
+          curl -sL "$TOOLCHAIN_URL" | tar xvz -C ./
+          echo "PS3DEV=${GITHUB_WORKSPACE}/ps3dev" >> $GITHUB_ENV
+          echo "PSL1GHT=${GITHUB_WORKSPACE}/ps3dev" >> $GITHUB_ENV
+          echo "PATH=$PATH:$PWD/ps3dev/bin:$PWD/ps3dev/ppu/bin:$PWD/ps3dev/spu/bin" >> $GITHUB_ENV
+
+      - name: Build PSL1GHT
+        run: |
+          cd ps3toolchain
+          ./toolchain.sh 8
+
+      - name: Build libraries
+        run: |
+          cd ps3toolchain
+          ./toolchain.sh 9
+
+      - name: Build Package
+        run: |
+           tar -zcvf ps3dev-${{ matrix.os }}-${{ runner.arch }}.tar.gz ps3dev/
+
+      - name: Push package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ps3dev-${{ env.sha_name }}-${{ matrix.os }}-${{ runner.arch }}
+          path: ps3dev-${{ matrix.os }}-${{ runner.arch }}.tar.gz
+          if-no-files-found: error
+
+  push_release:
+    if: |
+      github.event_name == 'push' &&
+      github.repository == 'ps3dev/ps3dev'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Pre-Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="nightly-$(date -u +%Y-%m-%d)"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" artifacts/*.tar.gz --target ${{ GITHUB.SHA }} -t "$TAG" --prerelease
