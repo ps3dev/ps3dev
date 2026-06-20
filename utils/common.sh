@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 
 fail() {
@@ -90,4 +89,3 @@ host_asset_arch() {
             ;;
     esac
 }
-```
