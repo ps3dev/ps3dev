@@ -52,14 +52,18 @@ find_stage() {
     number=$((10#$requested))
     printf -v prefix '%03d' "$number"
 
-    mapfile -t matches < <(
-        find "$ROOT_DIR/scripts" \
-            -maxdepth 1 \
-            -type f \
-            -name "${prefix}-*.sh" \
-            -print |
-        sort
-    )
+matches=()
+
+while IFS= read -r script; do
+    matches+=("$script")
+done < <(
+    find "$ROOT_DIR/scripts" \
+        -maxdepth 1 \
+        -type f \
+        -name "${prefix}-*.sh" \
+        -print |
+    LC_ALL=C sort
+)
 
     (( ${#matches[@]} > 0 )) ||
         fail "Unknown stage '$requested'."
@@ -153,27 +157,35 @@ printf '  Make:       %s\n' "$MAKE"
 
 # Optional master-repository dependency checks or preparation scripts.
 if [[ -d "$ROOT_DIR/depends" ]]; then
-    mapfile -t DEPEND_SCRIPTS < <(
-        find "$ROOT_DIR/depends" \
-            -maxdepth 1 \
-            -type f \
-            -name '*.sh' \
-            -print |
-        sort
-    )
+DEPEND_SCRIPTS=()
+
+while IFS= read -r script; do
+    DEPEND_SCRIPTS+=("$script")
+done < <(
+    find "$ROOT_DIR/depends" \
+        -maxdepth 1 \
+        -type f \
+        -name '*.sh' \
+        -print |
+    LC_ALL=C sort
+)
 
     for script in "${DEPEND_SCRIPTS[@]}"; do
         run_script "$script"
     done
 fi
 
-mapfile -t BUILD_SCRIPTS < <(
+BUILD_SCRIPTS=()
+
+while IFS= read -r script; do
+    BUILD_SCRIPTS+=("$script")
+done < <(
     find "$ROOT_DIR/scripts" \
         -maxdepth 1 \
         -type f \
         -name '[0-9][0-9][0-9]-*.sh' \
         -print |
-    sort
+    LC_ALL=C sort
 )
 
 (( ${#BUILD_SCRIPTS[@]} > 0 )) ||
