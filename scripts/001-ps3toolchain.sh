@@ -8,22 +8,50 @@ TOOLCHAIN_REPOSITORY="${PS3TOOLCHAIN_REPO_URL:-https://github.com/ps3dev/ps3tool
 TOOLCHAIN_REF="${PS3TOOLCHAIN_REF:-master}"
 TOOLCHAIN_DIR="$PS3DEV_BUILD_DIR/ps3toolchain"
 
-RELEASES_API="${PS3TOOLCHAIN_RELEASES_API:-https://api.github.com/repos/ps3dev/ps3toolchain/releases}"
+RELEASE_BASE_URL="${PS3TOOLCHAIN_RELEASE_BASE_URL:-https://github.com/ps3dev/ps3toolchain/releases}"
+PINNED_TOOLCHAIN_RELEASE="${PINNED_TOOLCHAIN_RELEASE:-nightly-2026-06-16}"
 DOWNLOAD_DIR="$PS3DEV_BUILD_DIR/downloads"
+
+download_archive() {
+    local url="$1"
+    local destination="$2"
+
+    rm -f "$destination.part"
+
+    if curl \
+        --fail \
+        --location \
+        --silent \
+        --show-error \
+        --retry 3 \
+        --retry-delay 2 \
+        --header 'User-Agent: ps3dev-build-all' \
+        "$url" \
+        --output "$destination.part"
+    then
+        if [[ ! -s "$destination.part" ]]; then
+            rm -f "$destination.part"
+            return 1
+        fi
+
+        mv "$destination.part" "$destination"
+        return 0
+    fi
+
+    rm -f "$destination.part"
+    return 1
+}
 
 install_prebuilt_toolchain() {
     local asset_os
     local asset_arch
     local asset_name
-    local release_data
     local release_tag
     local release_url
     local archive
     local temporary_dir
-    local -a curl_headers
 
     require_command curl
-    require_command python3
     require_command tar
 
     asset_os="$(host_asset_os)" ||
@@ -40,89 +68,47 @@ install_prebuilt_toolchain() {
 
     mkdir -p "$DOWNLOAD_DIR"
 
-    release_data="$PS3DEV_BUILD_DIR/ps3toolchain-releases.json"
+    if [[ -n "${PS3TOOLCHAIN_RELEASE_TAG:-}" ]]; then
+        release_tag="$PS3TOOLCHAIN_RELEASE_TAG"
+        release_url="$RELEASE_BASE_URL/download/$release_tag/$asset_name"
+        archive="$DOWNLOAD_DIR/${release_tag}-${asset_name}"
 
-    curl_headers=(
-        -H 'Accept: application/vnd.github+json'
-        -H 'X-GitHub-Api-Version: 2022-11-28'
-        -H 'User-Agent: ps3dev-build-all'
-    )
+        if [[ -s "$archive" ]]; then
+            heading "Using cached ps3toolchain $release_tag"
+        else
+            heading "Downloading ps3toolchain $release_tag"
 
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl_headers+=(
-            -H "Authorization: Bearer $GITHUB_TOKEN"
-        )
-    fi
-
-    heading "Finding the latest $asset_name release"
-
-    curl \
-        --fail \
-        --location \
-        --silent \
-        --show-error \
-        --retry 3 \
-        --retry-delay 2 \
-        "${curl_headers[@]}" \
-        "$RELEASES_API" \
-        -o "$release_data"
-
-    IFS=$'\t' read -r release_tag release_url < <(
-        python3 - "$release_data" "$asset_name" <<'PY'
-import json
-import sys
-
-release_file, wanted_asset = sys.argv[1:]
-
-with open(release_file, "r", encoding="utf-8") as handle:
-    releases = json.load(handle)
-
-releases = sorted(
-    (
-        release
-        for release in releases
-        if release.get("prerelease") and not release.get("draft")
-    ),
-    key=lambda release: (
-        release.get("published_at")
-        or release.get("created_at")
-        or ""
-    ),
-    reverse=True,
-)
-
-for release in releases:
-    for asset in release.get("assets", []):
-        if asset.get("name") == wanted_asset:
-            print(
-                release.get("tag_name", "untagged"),
-                asset["browser_download_url"],
-                sep="\t",
-            )
-            raise SystemExit(0)
-
-raise SystemExit(f"No prerelease contains {wanted_asset}")
-PY
-    ) || fail "Could not find a suitable ps3toolchain release."
-
-    archive="$DOWNLOAD_DIR/${release_tag}-${asset_name}"
-
-    if [[ ! -s "$archive" ]]; then
-        heading "Downloading ps3toolchain $release_tag"
-
-        curl \
-            --fail \
-            --location \
-            --show-error \
-            --retry 3 \
-            --retry-delay 2 \
-            "${curl_headers[@]}" \
-            "$release_url" \
-            -o "$archive.part"
-
-        mv "$archive.part" "$archive"
+            download_archive "$release_url" "$archive" ||
+                fail \
+                    "Could not download $asset_name from " \
+                    "ps3toolchain release $release_tag."
+        fi
     else
-        heading "Using cached ps3toolchain $release_tag"
+        release_tag="latest"
+        release_url="$RELEASE_BASE_URL/latest/download/$asset_name"
+        archive="$DOWNLOAD_DIR/latest-${asset_name}"
+
+        heading "Trying the latest stable ps3toolchain release"
+
+        # The latest release can change without its URL changing, so always
+        # refresh this archive instead of trusting a previous download.
+        if ! download_archive "$release_url" "$archive"; then
+            release_tag="$PINNED_TOOLCHAIN_RELEASE"
+            release_url="$RELEASE_BASE_URL/download/$release_tag/$asset_name"
+            archive="$DOWNLOAD_DIR/${release_tag}-${asset_name}"
+
+            heading \
+                "No stable release found; falling back to ps3toolchain $release_tag"
+
+            if [[ -s "$archive" ]]; then
+                heading "Using cached ps3toolchain $release_tag"
+            else
+                download_archive "$release_url" "$archive" ||
+                    fail \
+                        "Could not download either the latest stable " \
+                        "toolchain or fallback release $release_tag."
+            fi
+        fi
     fi
 
     temporary_dir="$(
@@ -130,6 +116,8 @@ PY
     )"
 
     trap 'rm -rf "$temporary_dir"' EXIT
+
+    heading "Extracting ps3toolchain $release_tag"
 
     tar -xzf "$archive" -C "$temporary_dir"
 
