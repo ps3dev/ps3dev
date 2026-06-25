@@ -71,13 +71,11 @@ jobs:
 
       - name: Build PSL1GHT
         run: |
-          cd ps3toolchain
-          ./toolchain.sh 8
+          ./build-all.sh 2
 
       - name: Build libraries
         run: |
-          cd ps3toolchain
-          ./toolchain.sh 9
+          ./build-all.sh 3
 
       - name: Build Package
         run: |
