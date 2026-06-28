@@ -1,6 +1,10 @@
 name: Test Latest PS3DEV Release
 
 on:
+  push:
+    branches:
+      - verify-ci
+
   workflow_dispatch:
 
   workflow_run:
@@ -19,6 +23,7 @@ concurrency:
 jobs:
   test_samples:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (
         github.event.workflow_run.conclusion == 'success' &&
