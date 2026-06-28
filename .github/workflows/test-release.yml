@@ -1,0 +1,252 @@
+name: Test Latest PS3DEV Release
+
+on:
+  workflow_dispatch:
+
+  workflow_run:
+    workflows:
+      - PS3 SDK Release
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-latest-ps3dev-release
+  cancel-in-progress: true
+
+jobs:
+  test_samples:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push'
+      )
+
+    name: Samples (${{ matrix.os }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: X64
+
+          - runner: macos-15-intel
+            os: macos
+            arch: X64
+
+          - runner: macos-26
+            os: macos
+            arch: ARM64
+
+    steps:
+      - name: Checkout ps3dev
+        uses: actions/checkout@v6
+
+      - name: Install host requirements
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo bash ./prepare.sh
+          else
+            bash ./prepare.sh
+          fi
+
+      - name: Download latest PS3DEV release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ps3dev/ps3dev
+          RELEASE_ASSET: ps3dev-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+        run: |
+          set -Eeuo pipefail
+
+          RELEASE_TAG="$(
+            gh api \
+              "repos/${RELEASE_REPOSITORY}/releases?per_page=100" \
+              --jq '
+                map(select(.draft | not))
+                | sort_by(.published_at)
+                | reverse
+                | .[0].tag_name
+              '
+          )"
+
+          if [[ -z "$RELEASE_TAG" || "$RELEASE_TAG" == "null" ]]; then
+            echo "No published PS3DEV release was found." >&2
+            exit 1
+          fi
+
+          DOWNLOAD_URL="$(
+            gh api \
+              "repos/${RELEASE_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+              --jq \
+              ".assets[]
+               | select(.name == \"${RELEASE_ASSET}\")
+               | .browser_download_url"
+          )"
+
+          if [[ -z "$DOWNLOAD_URL" ]]; then
+            echo "Release '${RELEASE_TAG}' does not contain '${RELEASE_ASSET}'." >&2
+            exit 1
+          fi
+
+          mkdir -p release
+
+          curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --output "release/${RELEASE_ASSET}" \
+            "$DOWNLOAD_URL"
+
+          echo "Downloaded ${RELEASE_ASSET} from ${RELEASE_TAG}."
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract released SDK
+        id: sdk
+        shell: bash
+        env:
+          RELEASE_ASSET: ps3dev-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+        run: |
+          set -Eeuo pipefail
+
+          INSTALL_ROOT="$RUNNER_TEMP/released-ps3dev"
+          SDK_ROOT="$INSTALL_ROOT/ps3dev"
+
+          rm -rf "$INSTALL_ROOT"
+          mkdir -p "$INSTALL_ROOT"
+
+          tar \
+            -xzf "release/${RELEASE_ASSET}" \
+            -C "$INSTALL_ROOT"
+
+          required_files=(
+            "$SDK_ROOT/build.txt"
+            "$SDK_ROOT/ppu_rules"
+            "$SDK_ROOT/spu_rules"
+            "$SDK_ROOT/ppu/bin/ppu-gcc"
+            "$SDK_ROOT/spu/bin/spu-gcc"
+          )
+
+          for required_file in "${required_files[@]}"; do
+            if [[ ! -e "$required_file" ]]; then
+              echo "Required SDK file is missing: $required_file" >&2
+              exit 1
+            fi
+          done
+
+          PSL1GHT_REF="$(
+            awk '$1 == "PSL1GHT" { print $2; exit }' \
+              "$SDK_ROOT/build.txt"
+          )"
+
+          if [[ ! "$PSL1GHT_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo \
+              "Could not obtain a valid PSL1GHT commit from build.txt." \
+              >&2
+            cat "$SDK_ROOT/build.txt" >&2
+            exit 1
+          fi
+
+          echo "PS3DEV=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "PSL1GHT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          echo "$SDK_ROOT/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/ppu/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/spu/bin" >> "$GITHUB_PATH"
+
+          echo "root=$SDK_ROOT" >> "$GITHUB_OUTPUT"
+          echo "psl1ght_ref=$PSL1GHT_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Verify released toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          echo "PS3DEV=$PS3DEV"
+          echo "PSL1GHT=$PSL1GHT"
+
+          command -v ppu-gcc
+          command -v spu-gcc
+          command -v make_self
+          command -v fself
+
+          ppu-gcc --version
+          spu-gcc --version
+
+      - name: Checkout matching PSL1GHT source
+        uses: actions/checkout@v6
+        with:
+          repository: ps3dev/PSL1GHT
+          ref: ${{ steps.sdk.outputs.psl1ght_ref }}
+          path: PSL1GHT-source
+
+      - name: Build PSL1GHT samples
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make \
+            -C PSL1GHT-source/samples \
+            SHELL=/bin/bash \
+            '.SHELLFLAGS=-e -o pipefail -c' \
+            2>&1 | tee "$RUNNER_TEMP/psl1ght-samples.log"
+
+      - name: Validate sample outputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test -f \
+            PSL1GHT-source/samples/sys/threadtest/threadtest.elf
+
+          test -f \
+            PSL1GHT-source/samples/sys/threadtest/threadtest.self
+
+          test -f \
+            PSL1GHT-source/samples/spu/sputest/sputest.elf
+
+          test -f \
+            PSL1GHT-source/samples/spu/sputest/sputest.self
+
+          ppu-readelf \
+            -h \
+            PSL1GHT-source/samples/sys/threadtest/threadtest.elf
+
+          echo
+          echo "Generated sample binaries:"
+
+          find PSL1GHT-source/samples \
+            -type f \
+            \( \
+              -name '*.elf' -o \
+              -name '*.self' -o \
+              -name '*.fake.self' -o \
+              -name '*.pkg' \
+            \) \
+            -print \
+            | LC_ALL=C sort
+
+      - name: Upload sample build results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            ps3dev-release-samples-${{
+              steps.release.outputs.tag
+            }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            PSL1GHT-source/samples/**/*.elf
+            PSL1GHT-source/samples/**/*.self
+            PSL1GHT-source/samples/**/*.pkg
+            ${{ runner.temp }}/psl1ght-samples.log
+          if-no-files-found: warn
+          retention-days: 14
