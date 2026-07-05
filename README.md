@@ -51,6 +51,8 @@ Add these variables to your login script. If you're on Linux, run `sudo nano ~/.
 
 This is required for the toolchain to work.
 
+Re-open the terminal or run `source ~/.bash_profile` to set the changes.
+
 ## Dependencies
 
 ### Linux
