@@ -90,7 +90,8 @@ jobs:
 
   push_release:
     if: |
-      github.event_name == 'push' &&
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' &&
       github.repository == 'ps3dev/ps3dev'
     needs: build
     runs-on: ubuntu-latest
